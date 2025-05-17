@@ -44,79 +44,70 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Immaterium</title>
     <link rel="stylesheet" href="./css/bootstrap-5.3.3.min.css">
-    <style>
-        body {
-            font-family: sans-serif;
-            min-height: 100vh;
-            background-color: #f5f5f5;
-        }
-        .dark-mode {
-            background-color: #212121;
-            color: #f5f5f5;
-        }
-        .navbar {
-            background-color: #FFCA9F;
-        }
-        .dark-mode .navbar {
-            background-color: rgba(255, 202, 159, 0.9);
-        }
-        .modal-content {
-            border-radius: 8px;
-            background-color: rgba(255, 218, 185, 0.8);
-        }
-        .dark-mode .modal-content {
-            background-color: rgba(255, 218, 185, 0.6);
-        }
-        .btn {
-            min-width: 100px;
-            padding: 10px;
-        }
-        .btn-primary {
-            background-color: #FFDAB9;
-            border-color: #FFDAB9;
-        }
-        .btn-primary:hover {
-            background-color: rgba(255, 228, 196, 0.7);
-            border-color: rgba(255, 228, 196, 0.7);
-        }
-        .btn-outline-light {
-            border-color: #FFE4C4;
-            color: #FFE4C4;
-        }
-        .btn-outline-light:hover {
-            background-color: rgba(255, 228, 196, 0.7);
-            color: #212121;
-        }
-        .circuit-board {
-            background-image: url('data:image/png;base64,');
-            background-size: cover;
-        }
-        #qrCanvas {
-            margin: auto;
-        }
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background-color: #FFE4C4;
-            padding: 10px;
-            border-radius: 5px;
-            z-index: 2000;
-        }
-        .dark-mode .notification {
-            background-color: rgba(255, 228, 196, 0.7);
-        }
-    </style>
+    <link rel="stylesheet" href="./css/styles.css">
 </head>
 <body x-data="app" @chain-changed.window="updateNetwork()" x-init="initialize()">
+    <script>
+        // Dynamic resource loading
+        async function loadResource(type, src) {
+            return new Promise((resolve, reject) => {
+                const element = type === 'script' ? document.createElement('script') : document.createElement('link');
+                if (type === 'script') {
+                    element.src = src;
+                    element.defer = true;
+                } else {
+                    element.rel = 'stylesheet';
+                    element.href = src;
+                }
+                element.onload = () => resolve(true);
+                element.onerror = () => reject(new Error(`Failed to load ${src}`));
+                document.head.appendChild(element);
+            });
+        }
+
+        async function loadResources() {
+            const resources = [
+                { type: 'script', paths: ['js/logic.js', './js/logic.js', 'logic.js'] },
+                { type: 'script', paths: ['js/app.js', './js/app.js'] },
+                { type: 'script', paths: ['js/trianglify.min.js'] },
+                { type: 'script', paths: ['js/marked.min.js'] },
+                { type: 'script', paths: ['js/alpinejs-3.12.0.min.js'] },
+                { type: 'script', paths: ['js/bootstrap-5.3.3.bundle.min.js'] },
+                { type: 'script', paths: ['js/qrcode.min.js'] }
+            ];
+
+            for (const resource of resources) {
+                for (const path of resource.paths) {
+                    try {
+                        const response = await fetch(path, { method: 'HEAD' });
+                        if (response.ok) {
+                            await loadResource(resource.type, `${path}?v=${Date.now()}`);
+                            if (resource.paths.includes('logic.js') && window.web3Logic) return true;
+                            break;
+                        }
+                    } catch (err) {
+                        console.warn(`Path ${path} not found: ${err.message}`);
+                    }
+                }
+            }
+            if (!window.web3Logic) {
+                window.alert('Failed to load logic.js. Ensure it exists in js/ and defines window.web3Logic.');
+                document.dispatchEvent(new CustomEvent('resourceError', { detail: 'logic.js' }));
+            }
+            return false;
+        }
+
+        loadResources();
+    </script>
+
     <nav class="navbar navbar-expand-lg">
         <div class="container-fluid">
-            <a class="navbar-brand" href="#landing">
-                <img src="./assets/immateriumLogo.png" alt="Immaterium Logo" style="height: 30px;">
-            </a>
-            <div class="ms-auto">
-                <button class="btn btn-outline-light me-2" id="networkSettings" @click="handleNetworkSwitch()"></button>
-                <button class="btn btn-primary" id="connectWallet" @click="openModal('walletModal')">Connect Wallet</button>
+            <button class="btn btn-symbol logo-button" @click="navigateTo('#landing')" @touchstart="navigateTo('#landing')" style="z-index: 10;">
+                <img src="./assets/immateriumLogo.png" alt="Immaterium Logo">
+            </button>
+            <div class="ms-auto d-flex gap-2">
+                <button class="btn btn-symbol" id="networkSettings" @click="handleNetworkSwitch()" @touchstart="handleNetworkSwitch()" style="z-index: 10;"></button>
+                <button class="btn btn-primary" id="connectWallet" @click="connectToWallet()" @touchstart="connectToWallet()" x-bind:disabled="!window.web3Logic" style="z-index: 10;">Connect Wallet</button>
             </div>
         </div>
     </nav>
@@ -124,28 +115,30 @@
     <div class="container my-4" id="landing">
         <div class="row">
             <div class="col-12">
-                <div class="card" style="background-color: rgba(255, 202, 159, 0.9);">
+                <div class="card">
                     <div class="card-body position-relative">
                         <h5 class="card-title">Welcome!</h5>
                         <p class="card-text">Immaterium is a subscription and social media system using asymmetric encryption, all media is user managed with no central server. Try it!</p>
-                        <button class="btn btn-primary" style="position: absolute; bottom: 10px; left: 10px;" @click="openModal('searchModal')">Search</button>
-                        <button class="btn btn-primary" style="position: absolute; bottom: 10px; right: 10px;" @click="openModal('chapterCreationModal')">Create</button>
-                        <button class="btn btn-primary rounded-circle" style="position: absolute; top: 10px; right: 10px;" @click="openModal('userFeedModal')">📜</button>
-                        <a href="https://testnet.soniclabs.com/account" class="text-decoration-underline" style="font-size: 0.8rem;">Get Gas</a>
+                        <div class="d-flex justify-content-center gap-3">
+                            <button class="btn btn-primary" @click="openModal('searchModal')" @touchstart="openModal('searchModal')" style="z-index: 10;">Search</button>
+                            <button class="btn btn-primary" @click="openModal('chapterCreationModal')" @touchstart="openModal('chapterCreationModal')" style="z-index: 10;">Create</button>
+                        </div>
+                        <a href="https://testnet.soniclabs.com/account" class="get-gas text-decoration-none" target="_blank" rel="noopener noreferrer">Get Gas</a>
+                        <button class="btn btn-symbol" style="position: absolute; top: 10px; right: 10px; z-index: 10;" @click="openModal('userFeedModal')" @touchstart="openModal('userFeedModal')">📜</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="container my-4">
-        <div class="row">
-            <div class="col-12">
-                <a href="https://github.com/Peng-Protocol/Appmaterium" class="text-decoration-underline me-2">Github</a>
-                <a href="https://testnet.sonicscan.org/address/0xAbd617983DCE1571D71cCC0F6C167cd72E8b9be7#readContract" class="text-decoration-underline me-2">Factory</a>
-                <a href="https://x.com/Dexhune" class="text-decoration-underline me-2">Twitter (X)</a>
-                <button class="btn btn-outline Aegean Sea light" id="modeToggle" @click="toggleDarkMode()"></button>
-            </div>
+    <div class="footer-links">
+        <div class="links-row">
+            <a href="https://github.com/Peng-Protocol/Appmaterium" class="btn btn-link" target="_blank" rel="noopener noreferrer" style="z-index: 10;">Github</a>
+            <a href="https://testnet.sonicscan.org/address/0xAbd617983DCE1571D71cCC0F6C167cd72E8b9be7#readContract" class="btn btn-link" target="_blank" rel="noopener noreferrer" style="z-index: 10;">Factory</a>
+            <a href="https://x.com/Dexhune" class="btn btn-link" target="_blank" rel="noopener noreferrer" style="z-index: 10;">Twitter (X)</a>
+        </div>
+        <div class="mode-toggle-wrapper">
+            <button class="btn btn-symbol" id="modeToggle" @click="toggleDarkMode()" @touchstart="toggleDarkMode()" x-text="isDarkMode ? '\u2600' : '\u263D'" style="z-index: 10;"></button>
         </div>
     </div>
 
@@ -157,8 +150,8 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-body">
-                    <button class="btn btn-primary" @click="connectToWallet()">Browser Wallet</button>
-                    <button class="btn btn-primary" @click="openModal('qrModal')">QR Code</button>
+                    <button class="btn btn-primary" @click="connectToWallet()" @touchstart="connectToWallet()" style="z-index: 10;">Browser Wallet</button>
+                    <button class="btn btn-primary" @click="openModal('qrModal')" @touchstart="openModal('qrModal')" style="z-index: 10;">QR Code</button>
                 </div>
             </div>
         </div>
@@ -170,7 +163,7 @@
                 <div class="modal-body">
                     <input type="text" class="form-control mb-2" id="qrAddress" placeholder="Enter address">
                     <canvas id="qrCanvas"></canvas>
-                    <button class="btn btn-primary mt-2" id="copyUri" style="display: none;" @click="copyURI()">Copy URI</button>
+                    <button class="btn btn-primary mt-2" id="copyUri" style="display: none; z-index: 10;" @click="copyURI()" @touchstart="copyURI()">Copy URI</button>
                     <div id="qrError" style="color: red; display: none;"></div>
                 </div>
             </div>
@@ -183,7 +176,7 @@
                 <div class="modal-body">
                     <input type="text" class="form-control mb-2" x-model="searchQuery" @input="searchChapters()" placeholder="Search chapters">
                     <template x-for="chapter in searchResults" :key="chapter.address">
-                        <div class="card mb-2" style="background-color: rgba(255, 202, 159, 0.9); cursor: pointer;" @click="openChapterModal(chapter.address)">
+                        <div class="card mb-2" @click="openChapterModal(chapter.address)" @touchstart="openChapterModal(chapter.address)">
                             <div class="card-body">
                                 <p class="card-text" x-text="chapter.name"></p>
                                 <small x-text="chapter.address"></small>
@@ -203,9 +196,9 @@
                     <input type="text" class="form-control mb-2" x-model="chapterFeeAmount" placeholder="Fee Amount (e.g., 2)">
                     <input type="text" class="form-control mb-2" x-model="chapterFeeToken" placeholder="Fee Token (default: LUX)" @input="updateTokenLabel()">
                     <label x-text="chapterFeeTokenLabel"></label>
-                    <button class="btn btn-primary" @click="createChapter()">Create</button>
-                    <button class="btn btn-primary" @click="openModal('lightSourceModal')">Get LUX</button>
-                    <button class="btn btn-primary rounded-circle" style="position: absolute; bottom: 10px; left: 10px;" @click="showHelp()">?</button>
+                    <button class="btn btn-primary" @click="createChapter()" @touchstart="createChapter()" style="z-index: 10;">Create</button>
+                    <button class="btn btn-primary" @click="openModal('lightSourceModal')" @touchstart="openModal('lightSourceModal')" style="z-index: 10;">Get LUX</button>
+                    <button class="btn btn-symbol" style="position: absolute; bottom: 10px; left: 10px; z-index: 10;" @click="showHelp()" @touchstart="showHelp()">?</button>
                 </div>
             </div>
         </div>
@@ -216,7 +209,7 @@
             <div class="modal-content">
                 <div class="modal-body">
                     <p style="font-size: 0.8rem;">You may receive 0.01 LUX per address, there is <span x-text="lightSourceBalance"></span> in the Light Source.</p>
-                    <button class="btn btn-primary" @click="claimLux()">Get</button>
+                    <button class="btn btn-primary" @click="claimLux()" @touchstart="claimLux()" style="z-index: 10;">Get</button>
                 </div>
             </div>
         </div>
@@ -228,23 +221,23 @@
                 <div class="modal-body">
                     <div class="row">
                         <div class="col-6">
-                            <img :src="chapterData.image" alt="Chapter Image" style="max-width: 100%;" @click="chapterData.isElect ? openModal('chapterProfileModal') : showImage(chapterData.image)">
+                            <img :src="chapterData.image" alt="Chapter Image" style="max-width: 100%;" @click="chapterData.isElect ? openModal('chapterProfileModal') : showImage(chapterData.image)" @touchstart="chapterData.isElect ? openModal('chapterProfileModal') : showImage(chapterData.image)">
                             <h5 x-text="chapterData.name"></h5>
                             <p>Pending Fees: <span x-text="chapterData.pendingFees"></span></p>
                             <p>Hearer Count: <span x-text="chapterData.hearerCount"></span> (<span x-text="chapterData.cycleProfit"></span>)</p>
                         </div>
                         <div class="col-6">
                             <template x-if="chapterData.isElect">
-                                <button class="btn btn-primary rounded-circle" @click="openModal('lumenCreationModal')">💫</button>
+                                <button class="btn btn-symbol" @click="openModal('lumenCreationModal')" @touchstart="openModal('lumenCreationModal')" style="z-index: 10;">💫</button>
                             </template>
                             <template x-if="!chapterData.isSubscribed && !chapterData.isElect">
-                                <button class="btn btn-primary rounded-circle" @click="subscribe()">↖️</button>
+                                <button class="btn btn-symbol" @click="subscribe()" @touchstart="subscribe()" style="z-index: 10;">↖️</button>
                             </template>
                             <template x-if="chapterData.isSubscribed && !chapterData.isElect">
-                                <button class="btn btn-primary rounded-circle" @click="unsubscribe()">↘️</button>
+                                <button class="btn btn-symbol" @click="unsubscribe()" @touchstart="unsubscribe()" style="z-index: 10;">↘️</button>
                             </template>
-                            <button class="btn btn-primary rounded-circle" x-text="chapterData.isSubscribed || chapterData.isElect ? '🫂' : '😶‍🌫️'"></button>
-                            <button class="btn btn-primary rounded-circle" @click="showChapterHelp()">❔</button>
+                            <button class="btn btn-symbol" x-text="chapterData.isSubscribed || chapterData.isElect ? '🫂' : '😶‍🌫️'" style="z-index: 10;"></button>
+                            <button class="btn btn-symbol" @click="showChapterHelp()" @touchstart="showChapterHelp()" style="z-index: 10;">❔</button>
                         </div>
                     </div>
                     <div class="mt-3">
@@ -252,7 +245,7 @@
                             <p>Nobody here but us chickens!</p>
                         </template>
                         <template x-for="post in chapterData.posts" :key="post.index">
-                            <div class="card mb-2" style="background-color: rgba(255, 202, 159, 0.9);" @click="viewPost(post)">
+                            <div class="card mb-2" @click="viewPost(post)" @touchstart="viewPost(post)">
                                 <div class="card-body">
                                     <div x-html="post.preview"></div>
                                     <small x-text="post.timestamp"></small>
@@ -270,9 +263,9 @@
             <div class="modal-content">
                 <div class="modal-body">
                     <textarea class="form-control mb-2" x-model="lumenDataEntry" placeholder="Enter post content"></textarea>
-                    <button class="btn btn-primary mb-2" @click="openModal('catboxModal')">⬆️</button>
-                    <button class="btn btn-primary" x-text="lumenIsPublic ? 'Public' : 'Private'" @click="toggleLumenPrivacy()"></button>
-                    <button class="btn btn-primary" @click="createLumen()">⏫</button>
+                    <button class="btn btn-symbol mb-2" @click="openModal('catboxModal')" @touchstart="openModal('catboxModal')" style="z-index: 10;">⬆️</button>
+                    <button class="btn btn-primary" x-text="lumenIsPublic ? 'Public' : 'Private'" @click="toggleLumenPrivacy()" @touchstart="toggleLumenPrivacy()" style="z-index: 10;"></button>
+                    <button class="btn btn-primary" @click="createLumen()" @touchstart="createLumen()" style="z-index: 10;">⏫</button>
                 </div>
             </div>
         </div>
@@ -283,7 +276,7 @@
             <div class="modal-content">
                 <div class="modal-body">
                     <input type="file" class="form-control mb-2" id="catboxFile" multiple>
-                    <button class="btn btn-primary" @click="uploadToCatbox()">Upload</button>
+                    <button class="btn btn-primary" @click="uploadToCatbox()" @touchstart="uploadToCatbox()" style="z-index: 10;">Upload</button>
                     <div x-text="catboxStatus"></div>
                 </div>
             </div>
@@ -299,20 +292,20 @@
                         <span x-if="chapterData.hasNotifications" class="position-absolute top-0 end-0 bg-danger rounded-circle" style="width: 10px; height: 10px;"></span>
                     </div>
                     <input type="text" class="form-control mb-2" x-model="chapterData.name" @input="chapterData.nameChanged = true">
-                    <button class="btn btn-primary" x-if="chapterData.nameChanged" @click="updateChapterName()">💾</button>
+                    <button class="btn btn-symbol" x-if="chapterData.nameChanged" @click="updateChapterName()" @touchstart="updateChapterName()" style="z-index: 10;">💾</button>
                     <input type="text" class="form-control mb-2" x-model="chapterData.image" @input="chapterData.imageChanged = true">
-                    <button class="btn btn-primary" x-if="chapterData.imageChanged" @click="updateChapterImage()">💾</button>
-                    <button class="btn btn-primary" @click="openModal('catboxModal')">⬆️</button>
+                    <button class="btn btn-symbol" x-if="chapterData.imageChanged" @click="updateChapterImage()" @touchstart="updateChapterImage()" style="z-index: 10;">💾</button>
+                    <button class="btn btn-symbol" @click="openModal('catboxModal')" @touchstart="openModal('catboxModal')" style="z-index: 10;">⬆️</button>
                     <p>Pending Fees: <span x-text="chapterData.pendingFees"></span></p>
-                    <button class="btn btn-primary" x-if="chapterData.pendingFees > 0" @click="claimFees()">Claim</button>
+                    <button class="btn btn-primary" x-if="chapterData.pendingFees > 0" @click="claimFees()" @touchstart="claimFees()" style="z-index: 10;">Claim</button>
                     <p>Next Fee: <span x-text="chapterData.nextFee"></span></p>
                     <p>Rewards: <span x-text="chapterData.rewards"></span></p>
-                    <button class="btn btn-primary" x-if="chapterData.rewards > 0" @click="claimRewards()">Claim</button>
-                    <p x-if="chapterData.swapCount === 0">Mint Rewards: <button class="btn btn-primary" @click="mintRewards()">🚀</button></p>
+                    <button class="btn btn-primary" x-if="chapterData.rewards > 0" @click="claimRewards()" @touchstart="claimRewards()" style="z-index: 10;">Claim</button>
+                    <p x-if="chapterData.swapCount === 0">Mint Rewards: <button class="btn btn-primary" @click="mintRewards()" @touchstart="mintRewards()" style="z-index: 10;">🚀</button></p>
                     <p>Laggards: <span x-text="chapterData.laggards"></span></p>
-                    <button class="btn btn-primary" x-if="chapterData.laggards > 0" @click="billLaggards()">🫵</button>
+                    <button class="btn btn-primary" x-if="chapterData.laggards > 0" @click="billLaggards()" @touchstart="billLaggards()" style="z-index: 10;">🫵</button>
                     <input type="text" class="form-control mb-2" x-model="chapterData.elect" @input="chapterData.electChanged = true">
-                    <button class="btn btn-primary" x-if="chapterData.electChanged" @click="reElect()">💾</button>
+                    <button class="btn btn-symbol" x-if="chapterData.electChanged" @click="reElect()" @touchstart="reElect()" style="z-index: 10;">💾</button>
                 </div>
             </div>
         </div>
@@ -322,18 +315,18 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-body">
-                    <button class="btn btn-primary rounded-circle" @click="showSubscriptions()">⚙️</button>
+                    <button class="btn btn-symbol" @click="showSubscriptions()" @touchstart="showSubscriptions()" style="z-index: 10;">⚙️</button>
                     <template x-if="userFeed.showSubscriptions">
                         <div>
                             <template x-for="chapter in userFeed.subscriptions" :key="chapter.address">
-                                <div class="card mb-2" style="background-color: rgba(255, 202, 159, 0.9);">
+                                <div class="card mb-2">
                                     <div class="card-body">
                                         <p x-text="chapter.name"></p>
                                         <p>Fee: <span x-text="chapter.fee"></span></p>
                                         <p>Cycles Left: <span x-text="chapter.cyclesLeft"></span></p>
-                                        <button class="btn btn-primary" @click="extendSubscription(chapter.address)">Extend</button>
-                                        <button class="btn btn-primary" @click="cutSubscription(chapter.address)">Cut</button>
-                                        <button class="btn btn-primary" @click="cancelSubscription(chapter.address)">Cancel</button>
+                                        <button class="btn btn-primary" @click="extendSubscription(chapter.address)" @touchstart="extendSubscription(chapter.address)" style="z-index: 10;">Extend</button>
+                                        <button class="btn btn-primary" @click="cutSubscription(chapter.address)" @touchstart="cutSubscription(chapter.address)" style="z-index: 10;">Cut</button>
+                                        <button class="btn btn-primary" @click="cancelSubscription(chapter.address)" @touchstart="cancelSubscription(chapter.address)" style="z-index: 10;">Cancel</button>
                                     </div>
                                 </div>
                             </template>
@@ -342,27 +335,19 @@
                     <template x-if="!userFeed.showSubscriptions">
                         <div>
                             <template x-for="post in userFeed.posts" :key="post.index">
-                                <div class="card mb-2" style="background-color: rgba(255, 202, 159, 0.9);" @click="viewPost(post)">
+                                <div class="card mb-2" @click="viewPost(post)" @touchstart="viewPost(post)">
                                     <div class="card-body">
                                         <div x-html="post.preview"></div>
                                         <small x-text="post.timestamp"></small>
                                     </div>
                                 </div>
                             </template>
-                            <button class="btn btn-primary" @click="loadMoreFeed()">More</button>
+                            <button class="btn btn-primary" @click="loadMoreFeed()" @touchstart="loadMoreFeed()" style="z-index: 10;">More</button>
                         </div>
                     </template>
                 </div>
             </div>
         </div>
     </div>
-
-    <script src="./js/trianglify.min.js" defer></script>
-    <script src="./js/marked.min.js" defer></script>
-    <script src="./js/alpinejs-3.12.0.min.js" defer></script>
-    <script src="./js/bootstrap-5.3.3.bundle.min.js" defer></script>
-    <script src="./js/qrcode.min.js" defer></script>
-    <script src="./js/logic.js" defer></script>
-    <script src="./js/app.js" defer></script>
 </body>
 </html>
