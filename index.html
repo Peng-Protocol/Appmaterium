@@ -1,0 +1,368 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Immaterium</title>
+    <link rel="stylesheet" href="./css/bootstrap-5.3.3.min.css">
+    <style>
+        body {
+            font-family: sans-serif;
+            min-height: 100vh;
+            background-color: #f5f5f5;
+        }
+        .dark-mode {
+            background-color: #212121;
+            color: #f5f5f5;
+        }
+        .navbar {
+            background-color: #FFCA9F;
+        }
+        .dark-mode .navbar {
+            background-color: rgba(255, 202, 159, 0.9);
+        }
+        .modal-content {
+            border-radius: 8px;
+            background-color: rgba(255, 218, 185, 0.8);
+        }
+        .dark-mode .modal-content {
+            background-color: rgba(255, 218, 185, 0.6);
+        }
+        .btn {
+            min-width: 100px;
+            padding: 10px;
+        }
+        .btn-primary {
+            background-color: #FFDAB9;
+            border-color: #FFDAB9;
+        }
+        .btn-primary:hover {
+            background-color: rgba(255, 228, 196, 0.7);
+            border-color: rgba(255, 228, 196, 0.7);
+        }
+        .btn-outline-light {
+            border-color: #FFE4C4;
+            color: #FFE4C4;
+        }
+        .btn-outline-light:hover {
+            background-color: rgba(255, 228, 196, 0.7);
+            color: #212121;
+        }
+        .circuit-board {
+            background-image: url('data:image/png;base64,');
+            background-size: cover;
+        }
+        #qrCanvas {
+            margin: auto;
+        }
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #FFE4C4;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 2000;
+        }
+        .dark-mode .notification {
+            background-color: rgba(255, 228, 196, 0.7);
+        }
+    </style>
+</head>
+<body x-data="app" @chain-changed.window="updateNetwork()" x-init="initialize()">
+    <nav class="navbar navbar-expand-lg">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#landing">
+                <img src="./assets/immateriumLogo.png" alt="Immaterium Logo" style="height: 30px;">
+            </a>
+            <div class="ms-auto">
+                <button class="btn btn-outline-light me-2" id="networkSettings" @click="handleNetworkSwitch()"></button>
+                <button class="btn btn-primary" id="connectWallet" @click="openModal('walletModal')">Connect Wallet</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container my-4" id="landing">
+        <div class="row">
+            <div class="col-12">
+                <div class="card" style="background-color: rgba(255, 202, 159, 0.9);">
+                    <div class="card-body position-relative">
+                        <h5 class="card-title">Welcome!</h5>
+                        <p class="card-text">Immaterium is a subscription and social media system using asymmetric encryption, all media is user managed with no central server. Try it!</p>
+                        <button class="btn btn-primary" style="position: absolute; bottom: 10px; left: 10px;" @click="openModal('searchModal')">Search</button>
+                        <button class="btn btn-primary" style="position: absolute; bottom: 10px; right: 10px;" @click="openModal('chapterCreationModal')">Create</button>
+                        <button class="btn btn-primary rounded-circle" style="position: absolute; top: 10px; right: 10px;" @click="openModal('userFeedModal')">📜</button>
+                        <a href="https://testnet.soniclabs.com/account" class="text-decoration-underline" style="font-size: 0.8rem;">Get Gas</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container my-4">
+        <div class="row">
+            <div class="col-12">
+                <a href="https://github.com/Peng-Protocol/Appmaterium" class="text-decoration-underline me-2">Github</a>
+                <a href="https://testnet.sonicscan.org/address/0xAbd617983DCE1571D71cCC0F6C167cd72E8b9be7#readContract" class="text-decoration-underline me-2">Factory</a>
+                <a href="https://x.com/Dexhune" class="text-decoration-underline me-2">Twitter (X)</a>
+                <button class="btn btn-outline Aegean Sea light" id="modeToggle" @click="toggleDarkMode()"></button>
+            </div>
+        </div>
+    </div>
+
+    <template x-for="notification in notifications" :key="notification.message">
+        <div class="notification" x-show="notification.timeout > 0" x-text="notification.message"></div>
+    </template>
+
+    <div class="modal fade" id="walletModal" tabindex="-1" x-on:click.away="closeModal('walletModal')">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <button class="btn btn-primary" @click="connectToWallet()">Browser Wallet</button>
+                    <button class="btn btn-primary" @click="openModal('qrModal')">QR Code</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="qrModal" tabindex="-1" x-on:click.away="closeModal('qrModal')">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <input type="text" class="form-control mb-2" id="qrAddress" placeholder="Enter address">
+                    <canvas id="qrCanvas"></canvas>
+                    <button class="btn btn-primary mt-2" id="copyUri" style="display: none;" @click="copyURI()">Copy URI</button>
+                    <div id="qrError" style="color: red; display: none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="searchModal" tabindex="-1" x-on:click.away="closeModal('searchModal')">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <input type="text" class="form-control mb-2" x-model="searchQuery" @input="searchChapters()" placeholder="Search chapters">
+                    <template x-for="chapter in searchResults" :key="chapter.address">
+                        <div class="card mb-2" style="background-color: rgba(255, 202, 159, 0.9); cursor: pointer;" @click="openChapterModal(chapter.address)">
+                            <div class="card-body">
+                                <p class="card-text" x-text="chapter.name"></p>
+                                <small x-text="chapter.address"></small>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="chapterCreationModal" tabindex="-1" x-on:click.away="closeModal('chapterCreationModal')">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <input type="text" class="form-control mb-2" x-model="chapterFeeInterval" placeholder="Fee Interval (e.g., 1 week)">
+                    <input type="text" class="form-control mb-2" x-model="chapterFeeAmount" placeholder="Fee Amount (e.g., 2)">
+                    <input type="text" class="form-control mb-2" x-model="chapterFeeToken" placeholder="Fee Token (default: LUX)" @input="updateTokenLabel()">
+                    <label x-text="chapterFeeTokenLabel"></label>
+                    <button class="btn btn-primary" @click="createChapter()">Create</button>
+                    <button class="btn btn-primary" @click="openModal('lightSourceModal')">Get LUX</button>
+                    <button class="btn btn-primary rounded-circle" style="position: absolute; bottom: 10px; left: 10px;" @click="showHelp()">?</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="lightSourceModal" tabindex="-1" x-on:click.away="closeModal('lightSourceModal')">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <p style="font-size: 0.8rem;">You may receive 0.01 LUX per address, there is <span x-text="lightSourceBalance"></span> in the Light Source.</p>
+                    <button class="btn btn-primary" @click="claimLux()">Get</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="chapterModal" tabindex="-1" x-on:click.away="closeModal('chapterModal')">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-6">
+                            <img :src="chapterData.image" alt="Chapter Image" style="max-width: 100%;" @click="chapterData.isElect ? openModal('chapterProfileModal') : showImage(chapterData.image)">
+                            <h5 x-text="chapterData.name"></h5>
+                            <p>Pending Fees: <span x-text="chapterData.pendingFees"></span></p>
+                            <p>Hearer Count: <span x-text="chapterData.hearerCount"></span> (<span x-text="chapterData.cycleProfit"></span>)</p>
+                        </div>
+                        <div class="col-6">
+                            <template x-if="chapterData.isElect">
+                                <button class="btn btn-primary rounded-circle" @click="openModal('lumenCreationModal')">💫</button>
+                            </template>
+                            <template x-if="!chapterData.isSubscribed && !chapterData.isElect">
+                                <button class="btn btn-primary rounded-circle" @click="subscribe()">↖️</button>
+                            </template>
+                            <template x-if="chapterData.isSubscribed && !chapterData.isElect">
+                                <button class="btn btn-primary rounded-circle" @click="unsubscribe()">↘️</button>
+                            </template>
+                            <button class="btn btn-primary rounded-circle" x-text="chapterData.isSubscribed || chapterData.isElect ? '🫂' : '😶‍🌫️'"></button>
+                            <button class="btn btn-primary rounded-circle" @click="showChapterHelp()">❔</button>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <template x-if="chapterData.posts.length === 0">
+                            <p>Nobody here but us chickens!</p>
+                        </template>
+                        <template x-for="post in chapterData.posts" :key="post.index">
+                            <div class="card mb-2" style="background-color: rgba(255, 202, 159, 0.9);" @click="viewPost(post)">
+                                <div class="card-body">
+                                    <div x-html="post.preview"></div>
+                                    <small x-text="post.timestamp"></small>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="lumenCreationModal" tabindex="-1" x-on:click.away="closeModal('lumenCreationModal')">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <textarea class="form-control mb-2" x-model="lumenDataEntry" placeholder="Enter post content"></textarea>
+                    <button class="btn btn-primary mb-2" @click="openModal('catboxModal')">⬆️</button>
+                    <button class="btn btn-primary" x-text="lumenIsPublic ? 'Public' : 'Private'" @click="toggleLumenPrivacy()"></button>
+                    <button class="btn btn-primary" @click="createLumen()">⏫</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="catboxModal" tabindex="-1" x-on:click.away="closeModal('catboxModal')">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <input type="file" class="form-control mb-2" id="catboxFile" multiple>
+                    <button class="btn btn-primary" @click="uploadToCatbox()">Upload</button>
+                    <div x-text="catboxStatus"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="chapterProfileModal" tabindex="-1" x-on:click.away="closeModal('chapterProfileModal')">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <div class="position-relative">
+                        <img :src="chapterData.image" alt="Chapter Image" style="max-width: 100%;">
+                        <span x-if="chapterData.hasNotifications" class="position-absolute top-0 end-0 bg-danger rounded-circle" style="width: 10px; height: 10px;"></span>
+                    </div>
+                    <input type="text" class="form-control mb-2" x-model="chapterData.name" @input="chapterData.nameChanged = true">
+                    <button class="btn btn-primary" x-if="chapterData.nameChanged" @click="updateChapterName()">💾</button>
+                    <input type="text" class="form-control mb-2" x-model="chapterData.image" @input="chapterData.imageChanged = true">
+                    <button class="btn btn-primary" x-if="chapterData.imageChanged" @click="updateChapterImage()">💾</button>
+                    <button class="btn btn-primary" @click="openModal('catboxModal')">⬆️</button>
+                    <p>Pending Fees: <span x-text="chapterData.pendingFees"></span></p>
+                    <button class="btn btn-primary" x-if="chapterData.pendingFees > 0" @click="claimFees()">Claim</button>
+                    <p>Next Fee: <span x-text="chapterData.nextFee"></span></p>
+                    <p>Rewards: <span x-text="chapterData.rewards"></span></p>
+                    <button class="btn btn-primary" x-if="chapterData.rewards > 0" @click="claimRewards()">Claim</button>
+                    <p x-if="chapterData.swapCount === 0">Mint Rewards: <button class="btn btn-primary" @click="mintRewards()">🚀</button></p>
+                    <p>Laggards: <span x-text="chapterData.laggards"></span></p>
+                    <button class="btn btn-primary" x-if="chapterData.laggards > 0" @click="billLaggards()">🫵</button>
+                    <input type="text" class="form-control mb-2" x-model="chapterData.elect" @input="chapterData.electChanged = true">
+                    <button class="btn btn-primary" x-if="chapterData.electChanged" @click="reElect()">💾</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="userFeedModal" tabindex="-1" x-on:click.away="closeModal('userFeedModal')">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <button class="btn btn-primary rounded-circle" @click="showSubscriptions()">⚙️</button>
+                    <template x-if="userFeed.showSubscriptions">
+                        <div>
+                            <template x-for="chapter in userFeed.subscriptions" :key="chapter.address">
+                                <div class="card mb-2" style="background-color: rgba(255, 202, 159, 0.9);">
+                                    <div class="card-body">
+                                        <p x-text="chapter.name"></p>
+                                        <p>Fee: <span x-text="chapter.fee"></span></p>
+                                        <p>Cycles Left: <span x-text="chapter.cyclesLeft"></span></p>
+                                        <button class="btn btn-primary" @click="extendSubscription(chapter.address)">Extend</button>
+                                        <button class="btn btn-primary" @click="cutSubscription(chapter.address)">Cut</button>
+                                        <button class="btn btn-primary" @click="cancelSubscription(chapter.address)">Cancel</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                    <template x-if="!userFeed.showSubscriptions">
+                        <div>
+                            <template x-for="post in userFeed.posts" :key="post.index">
+                                <div class="card mb-2" style="background-color: rgba(255, 202, 159, 0.9);" @click="viewPost(post)">
+                                    <div class="card-body">
+                                        <div x-html="post.preview"></div>
+                                        <small x-text="post.timestamp"></small>
+                                    </div>
+                                </div>
+                            </template>
+                            <button class="btn btn-primary" @click="loadMoreFeed()">More</button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="./js/trianglify.min.js" defer></script>
+    <script src="./js/marked.min.js" defer></script>
+    <script src="./js/alpinejs-3.12.0.min.js" defer></script>
+    <script src="./js/bootstrap-5.3.3.bundle.min.js" defer></script>
+    <script src="./js/qrcode.min.js" defer></script>
+    <script src="./js/logic.js" defer></script>
+    <script src="./js/app.js" defer></script>
+</body>
+</html>
